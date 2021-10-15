@@ -16,14 +16,13 @@ print('---------------------------------------------------------')
 specimen_id = str(input('Enter the specimen_id (string): '))
 first_stage = int(input('Enter the number of the stage from the upper load level (integer): '))
 last_stage = int(input('Enter the number of the stage from the lower load level (integer): '))
-thr_1 = float(input('Define the first threshold for the lower load level (float): '))
-thr_2 = float(input('Define the second threshold for the strain amplitude (float): '))
+# thr_1 = float(input('Define the first threshold for the lower load level (float): '))
+# thr_2 = float(input('Define the second threshold for the strain amplitude (float): '))
 print('---------------------------------------------------------')
 
 
 #os.chdir('%s/GOM/' % specimen_id)
 id_field = GRS.strain_field_read(specimen_id,first_stage,last_stage)
-print(id_field)
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
@@ -31,7 +30,7 @@ print(id_field)
 
 import GOM_plot_stages as GPS
 
-plot_switch = 1
+plot_switch = 0
 
 if plot_switch == 1:
     
@@ -40,6 +39,12 @@ if plot_switch == 1:
 else:
     pass
 # -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Call the strain_localization_detection function to filter the bands of high 
+# strain from the adjacent strain field  
+
+ #import strain_localization_detection as SLD
 
 # -----------------------------------------------------------------------------
 # Call the strain_localization_detection function to filter the highly strained 
