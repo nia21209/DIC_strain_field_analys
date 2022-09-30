@@ -8,13 +8,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 import sys
+from sklearn.cluster import KMeans
+from sklearn.datasets import make_blobs
 
 # ---------------------------------------------------------
 # Read the input data 
 # ---------------------------------------------------------
 try:
 
-    gom_data = pd.read_csv('surface_yx_0019.csv',\
+    gom_data = pd.read_csv('surface_yx_0041.csv',\
                             header=None,\
                             skiprows=[0,1,2,3,4,5],\
                             sep=';')
@@ -58,8 +60,8 @@ y_len = y_max - y_min
 n = int(x_len/dx)
 m = int(y_len/dy)
 
-x = np.linspace(x_min,x_max,n*1)
-y = np.linspace(y_min,y_max,m*1)
+x = np.linspace(x_min,x_max,n*10)
+y = np.linspace(y_min,y_max,m*10)
 
 grid_x, grid_y = np.meshgrid(x,y)
 
@@ -68,7 +70,7 @@ grid_x, grid_y = np.meshgrid(x,y)
 # ---------------------------------------------------------
 points = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,2]])
 
-grid_z_0 = griddata(points, gom_data.iloc[:,5], (grid_x, grid_y), method='nearest')
+grid_z_0 = griddata(points, gom_data.iloc[:,5], (grid_x, grid_y), method='cubic')
 
 # ---------------------------------------------------------
 # Calculations
@@ -82,7 +84,30 @@ print('eps_y_mean: ', eps_y_mean)
 # Plot the Data
 # ---------------------------------------------------------
 plt.subplot(111)
-plt.imshow(grid_z_0, cmap='jet', extent=(x_min,x_max,y_min,y_max), origin='lower',vmin=0,vmax=1.)
+plt.imshow(grid_z_0, cmap='jet', extent=(x_min,x_max,y_min,y_max), origin='lower',vmin=0,vmax=eps_y_mean)
 plt.colorbar()
+plt.grid()
+plt.show()
+
+plt.figure()
+n, bins, patches = plt.hist(gom_data.iloc[:,5],50,density=True,facecolor='g',alpha=0.75)
+plt.grid()
+plt.show()
+
+X = np.column_stack([gom_data.iloc[:,4], gom_data.iloc[:,5]])
+kmeans = KMeans(n_clusters=1).fit(X)
+y_pred = KMeans(n_clusters=1).fit_predict(X)
+centroids = kmeans.cluster_centers_
+print(centroids)
+
+plt.figure(figsize=(8,8))
+plt.scatter(X[:, 0], X[:, 1], c=y_pred)
+plt.scatter(centroids[:,0],centroids[:,1],marker='x',s=169,linewidths=3)
+plt.plot((0,-5),(0,10))
+plt.title("kmeans")
+plt.xlabel('eps_xx')
+plt.ylabel('eps_yy')
+plt.xlim((-3,0))
+plt.ylim((0,3.))
 plt.grid()
 plt.show()
