@@ -162,10 +162,6 @@ for i in range(stage_min,stage_max+1,2):
     else:
         pass
 
-
-
-
-
 # plt.figure()
 # n, bins, patches = plt.hist(gom_data.iloc[:,5],50,density=True,facecolor='g',alpha=0.75)
 # plt.grid()
