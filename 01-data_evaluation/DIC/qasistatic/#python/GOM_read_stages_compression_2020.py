@@ -2,6 +2,7 @@
 # Read stages from the GOM files writen by Anton Nischler @ LLK 26.09.2022
 # Load measured strain field from GOM-System and save the data for interpolation
 # -----------------------------------------------------------------------------
+from cProfile import label
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,15 +12,23 @@ import os
 from sklearn.cluster import KMeans
 from sklearn.datasets import make_blobs
 
-# ---------------------------------------------------------
-# Read the input data 
-# ---------------------------------------------------------
+specimen_id = str('GM-28_RD_comp_tens')
+surface_id = str('surface_yx')
+file_name = str('surface_yx_20_10')
+
+stage_min = 7
+stage_max = 7
 
 n_ROI = 2
-Rp = 0.2
-stage_min = 9
-stage_max = 9
+threshold_quality = 3
+quality_filter = False
 
+Rp = 0.2
+
+
+# ----------------------------------------------------------------------
+# Function for generating the Meshgrids
+# ----------------------------------------------------------------------
 def grid(d_ROI):
 
     n = len(d_ROI[:,0])
@@ -41,8 +50,6 @@ def grid(d_ROI):
             dy = dy_i
         else:
             pass
-        
-    print(dx,dy)
 
     x_min = np.min(d_ROI[:,1])
     x_max = np.max(d_ROI[:,1])
@@ -64,6 +71,75 @@ def grid(d_ROI):
     return (grid_x,grid_y)
 
 # ----------------------------------------------------------------------
+# Function for separation of the mBtG
+# ----------------------------------------------------------------------
+def seperation_mBtG(data):
+
+    X = np.column_stack([data[:,4], data[:,5]])
+        
+    kmeans = KMeans(n_clusters=2,n_init=10).fit(X)
+    y_pred = KMeans(n_clusters=2).fit_predict(X)
+    centroids = kmeans.cluster_centers_
+
+    threshold_one_sigma = abs(0.674490 * centroids[1,1])
+
+    count_BtG_in = 0
+    count_BtG_out = 0
+
+    for i in range(0,len(data[:,0]),1):
+        
+        delta = abs(centroids[1,1] - data[i,5])
+
+        if delta <= threshold_one_sigma:
+            count_BtG_in = count_BtG_in + 1
+
+        else:
+            count_BtG_out = count_BtG_out + 1
+    
+    data_BtG_in = np.zeros((count_BtG_in,len(data[0,:])))
+    data_BtG_out = np.zeros((count_BtG_out,len(data[0,:])))
+
+    count_BtG_in = 0
+    count_BtG_out = 0
+
+    for i in range(0,len(data[:,0]),1):
+        
+        delta = abs(centroids[1,1] - data[i,5])
+
+        if delta <= threshold_one_sigma:
+            data_BtG_in[count_BtG_in,:] = data[i,:]
+            count_BtG_in = count_BtG_in + 1
+
+        else:
+            data_BtG_out[count_BtG_out,:] = data[i,:]
+            count_BtG_out = count_BtG_out + 1
+
+    plt.figure(figsize=(6,6))
+    plt.scatter(X[:, 0], X[:, 1], c=y_pred)
+    plt.scatter(centroids[:,0],centroids[:,1],marker='x',s=169,linewidths=3)
+    plt.legend()
+    #plt.plot((0,-5),(0,10))
+    plt.title("kmeans")
+    plt.xlabel('eps_xx')
+    plt.ylabel('eps_yy')
+    #plt.xlim((eps_x_mean*1.3,0))
+    #plt.ylim((0,eps_y_mean*1.3))
+
+    try:
+        os.remove('%s_kmeans.png' % i_file_id)
+    except:
+        pass
+
+    #plt.savefig('%s_kmeans.png' % i_file_id)
+
+    plt.grid()
+    plt.show()
+
+    return centroids
+
+# ----------------------------------------------------------------------
+# Read the input data; ROI generation; Plot strain field
+# ----------------------------------------------------------------------
 
 try:
     os.remove('stages_means.csv')
@@ -73,14 +149,14 @@ except:
 for i in range(stage_min,stage_max+1,2):
     
     if i < 10:
-        i_file_id = 'surface_yx_20_10_000' + str(i)
+        i_file_id = file_name + '_000' + str(i)
     elif i < 100:
-        i_file_id = 'surface_yx_20_10_00' + str(i)
+        i_file_id = file_name + '_00' + str(i)
     else:
-        i_file_id = 'surface_yx_20_10_0' + str(i)
+        i_file_id = file_name + '_0' + str(i)
 
     try:
-        gom_data = pd.read_csv('../GM-28_RD_comp_tens/field_quantities/surface_yx/%s.csv'% i_file_id,\
+        gom_data = pd.read_csv('../%s/field_quantities/%s/%s.csv'% (specimen_id, surface_id, i_file_id),\
                                 header=None,\
                                 skiprows=[0,1,2,3,4,5],\
                                 sep=';')
@@ -89,16 +165,46 @@ for i in range(stage_min,stage_max+1,2):
         print('Error 1: File *.gom could not been opend!')
         sys.exit
 
+# ----------------------------------------------------------------------
+# Quality filter
+# ----------------------------------------------------------------------
+
+    if quality_filter is True:
+
+        length_gom_data = len(gom_data.iloc[:,0])
+
+        for j in range(0,length_gom_data,1):
+
+            if gom_data.iloc[j,6] < threshold_quality:
+                gom_data.iloc[j,:] = np.nan
+            
+            else:
+                pass
+    elif quality_filter is False:
+        pass
+
+    gom_data = gom_data.dropna()
+
+# ----------------------------------------------------------------------
+# Finde Region of Interests (ROI) an separate data set
+# ----------------------------------------------------------------------
+
     X = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,1]])
     y_pred = KMeans(n_clusters=n_ROI).fit_predict(X)
     
     d_ROI = {}
+    d_grid_x = {}
+    d_grid_y = {}
+    d_grid_z = {}
+    d_points = {}
+
     for m in range(1,n_ROI+1,1):
 
         d_ROI['ROI_{}'.format(m)] = np.empty((len(gom_data),len(gom_data.columns)))
         d_ROI['ROI_{}'.format(m)][:] = np.nan
     
         for j in range(0,len(gom_data.iloc[:,0]),1):
+
             y_pred_i = y_pred[j]
             
             if y_pred_i == m-1:
@@ -108,52 +214,44 @@ for i in range(stage_min,stage_max+1,2):
         
         d_ROI['ROI_{}'.format(m)] = d_ROI['ROI_{}'.format(m)][~np.isnan(d_ROI['ROI_{}'.format(m)]).any(axis=1)]
 
-    grid_x_1, grid_y_1 = grid(d_ROI['ROI_1'])
-    grid_x_2, grid_y_2 = grid(d_ROI['ROI_2'])
-    
-    # plt.figure()
-    # plt.scatter(d_ROI['ROI_1'][:,1],d_ROI['ROI_1'][:,2])
-    # plt.scatter(d_ROI['ROI_2'][:,1],d_ROI['ROI_2'][:,2])
-    # plt.grid()
-    # plt.show()
+        d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)] = grid(d_ROI['ROI_{}'.format(m)])
+
+        d_points['points_{}'.format(m)] = np.column_stack([d_ROI['ROI_{}'.format(m)][:,1], d_ROI['ROI_{}'.format(m)][:,2]])    
 
 # ---------------------------------------------------------
 # Interpolation
 # ---------------------------------------------------------
-    points1 = np.column_stack([d_ROI['ROI_1'][:,1], d_ROI['ROI_1'][:,2]])
-    grid_z_0 = griddata(points1, d_ROI['ROI_1'][:,5], (grid_x_1, grid_y_1), method='cubic')
-
-    points2 = np.column_stack([d_ROI['ROI_2'][:,1], d_ROI['ROI_2'][:,2]])
-    grid_z_1 = griddata(points2, d_ROI['ROI_2'][:,5], (grid_x_2, grid_y_2), method='cubic')
+        d_grid_z['grid_z_{}'.format(m)] = griddata(d_points['points_{}'.format(m)], d_ROI['ROI_{}'.format(m)][:,5], (d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)]), method='cubic')
 
 # ---------------------------------------------------------
 # Plot the Data
 # ---------------------------------------------------------
     plt.figure(figsize=(6,8))
-    plt.pcolormesh(grid_x_1,grid_y_1,grid_z_0,cmap='jet', vmin=-3, vmax=1)
-    plt.pcolormesh(grid_x_2,grid_y_2,grid_z_1,cmap='jet', vmin=-3, vmax=1)
+
+    for m in range(1,n_ROI+1,1):
+        plt.pcolormesh(d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)], d_grid_z['grid_z_{}'.format(m)], cmap='jet', vmin=-3, vmax=1)
+
     plt.colorbar()
     plt.grid()
     plt.show()
 
-    # plt.figure(figsize=(8,8))
-    # plt.imshow(grid_z_0, cmap='jet', extent=(-2,-1,-1,1), origin='lower',vmin=-3,vmax=3) 
-    # plt.imshow(grid_z_1, cmap='jet', extent=(1,2,-1,1), origin='lower',vmin=-3,vmax=3)
-    # plt.colorbar()
-    # plt.grid()
+    try:
+        os.remove('%s.png' % i_file_id)
+    except:
+        pass
 
-    # try:
-    #     os.remove('%s.png' % i_file_id)
-    # except:
-    #     pass
+    #plt.savefig('%s.png' % i_file_id)
+    #plt.title('%s;e_y=%0.2f;e_x=%0.2f;nu_yx=%0.2f' % (i_file_id,eps_y_mean,eps_x_mean,nu_yx))
+    plt.show()
 
-    # #plt.savefig('%s.png' % i_file_id)
-    # #plt.title('%s;e_y=%0.2f;e_x=%0.2f;nu_yx=%0.2f' % (i_file_id,eps_y_mean,eps_x_mean,nu_yx))
-    # plt.show()
+# ----------------------------------------------------------------------
+# Separate mBtG 
+# ----------------------------------------------------------------------
+data = seperation_mBtG(d_ROI['ROI_2'])
 
-# # ---------------------------------------------------------
+# # --------------------------------------------------------------------
 # # Calculations
-# # ---------------------------------------------------------
+# # --------------------------------------------------------------------
 #     eps_y_mean = abs(np.mean(gom_data.iloc[:,5]))
     
 #     if eps_y_mean > Rp:
@@ -168,58 +266,13 @@ for i in range(stage_min,stage_max+1,2):
 #         print('nu_yx: ', nu_yx)
 #         print('-------------------------------------')
 
-# # ---------------------------------------------------------
+# # --------------------------------------------------------------------
 # # Write results to ASCII file
 # # ---------------------------------------------------------
 #         ascii_file = open('stages_means.csv', 'a')
 #         ascii_file.write('%s,%0.3f,%0.3f,%0.3f\n' % (i_file_id,eps_x_mean,eps_y_mean,nu_yx))
 #         ascii_file.close()
 
-# # ---------------------------------------------------------
-# # Generate Meshgrid
-# # ---------------------------------------------------------
-#         n = len(gom_data.iloc[:,0])
-
-#         dx = 0
-#         dy = 0
-
-#         for i in range(0,n-1,1):
-            
-#             dx_i = abs(gom_data.iloc[i,1] - gom_data.iloc[i+1,1])
-#             dy_i = abs(gom_data.iloc[i,2] - gom_data.iloc[i+1,2])
-            
-#             if dx_i >= dx and dx_i < 1:
-#                 dx = dx_i
-#             else:
-#                 pass
-
-#             if dy_i >= dy and dy_i < 1:
-#                 dy = dy_i
-#             else:
-#                 pass
-
-#         x_min = np.min(gom_data.iloc[:,1])
-#         x_max = np.max(gom_data.iloc[:,1])
-
-#         y_min = np.min(gom_data.iloc[:,2])        X = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,1]])
-#         kmeans = KMeans(n_clusters=2,n_init=10).fit(X)
-#         y_pred = KMeans(n_clusters=2).fit_predict(X)
-#         centroids = kmeans.cluster_centers_
-#         print(centroids)
-#         for i in range(0,len(y_pred),1):
-#             print(y_pred[i])
-
-#         x = np.linspace(x_min,0,n*10)
-#         y = np.linspace(y_min,y_max,m*10)
-
-#         grid_x, grid_y = np.meshgrid(x,y)
-
-# # ---------------------------------------------------------
-# # Interpolation
-# # ---------------------------------------------------------
-#         points = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,2]])
-
-#         grid_z_0 = griddata(points, gom_data.iloc[:,5], (grid_x, grid_y), method='cubic')
 
 # # ---------------------------------------------------------
 # # Plot the Data
