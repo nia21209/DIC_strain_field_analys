@@ -2,7 +2,6 @@
 # Read stages from the GOM files writen by Anton Nischler @ LLK 26.09.2022
 # Load measured strain field from GOM-System and save the data for interpolation
 # -----------------------------------------------------------------------------
-from cProfile import label
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -73,9 +72,9 @@ def grid(d_ROI):
 # ----------------------------------------------------------------------
 # Function for separation of the mBtG
 # ----------------------------------------------------------------------
-def seperation_mBtG(data):
+def calculation_mBtG(DIC_data):
 
-    X = np.column_stack([data[:,4], data[:,5]])
+    X = np.column_stack([DIC_data.iloc[:,4], DIC_data.iloc[:,5]])
         
     kmeans = KMeans(n_clusters=2,n_init=10).fit(X)
     y_pred = KMeans(n_clusters=2).fit_predict(X)
@@ -86,9 +85,9 @@ def seperation_mBtG(data):
     count_BtG_in = 0
     count_BtG_out = 0
 
-    for i in range(0,len(data[:,0]),1):
+    for i in range(0,len(DIC_data.iloc[:,0]),1):
         
-        delta = abs(centroids[1,1] - data[i,5])
+        delta = abs(centroids[1,1] - DIC_data.iloc[i,5])
 
         if delta <= threshold_one_sigma:
             count_BtG_in = count_BtG_in + 1
@@ -96,28 +95,28 @@ def seperation_mBtG(data):
         else:
             count_BtG_out = count_BtG_out + 1
     
-    data_BtG_in = np.zeros((count_BtG_in,len(data[0,:])))
-    data_BtG_out = np.zeros((count_BtG_out,len(data[0,:])))
+    data_BtG_in = np.zeros((count_BtG_in,len(DIC_data.iloc[0,:])))
+    data_BtG_out = np.zeros((count_BtG_out,len(DIC_data.iloc[0,:])))
 
     count_BtG_in = 0
     count_BtG_out = 0
 
-    for i in range(0,len(data[:,0]),1):
+    for i in range(0,len(DIC_data.iloc[:,0]),1):
         
-        delta = abs(centroids[1,1] - data[i,5])
+        delta = abs(centroids[1,1] - DIC_data.iloc[i,5])
 
         if delta <= threshold_one_sigma:
-            data_BtG_in[count_BtG_in,:] = data[i,:]
+            data_BtG_in[count_BtG_in,:] = DIC_data.iloc[i,:]
             count_BtG_in = count_BtG_in + 1
 
         else:
-            data_BtG_out[count_BtG_out,:] = data[i,:]
+            data_BtG_out[count_BtG_out,:] = DIC_data.iloc[i,:]
             count_BtG_out = count_BtG_out + 1
 
     plt.figure(figsize=(6,6))
     plt.scatter(X[:, 0], X[:, 1], c=y_pred)
     plt.scatter(centroids[:,0],centroids[:,1],marker='x',s=169,linewidths=3)
-    plt.legend()
+    #plt.legend()
     #plt.plot((0,-5),(0,10))
     plt.title("kmeans")
     plt.xlabel('eps_xx')
@@ -135,7 +134,19 @@ def seperation_mBtG(data):
     plt.grid()
     plt.show()
 
+    print(centroids,threshold_one_sigma)
+
     return centroids
+
+# ----------------------------------------------------------------------
+# Function for interpolation
+# ----------------------------------------------------------------------
+def field_interpolation(ROI_, grid_x_, grid_y_):
+
+    points_ = np.column_stack([ROI_[:,1], ROI_[:,2]])  
+    grid_z_ = griddata(points_, ROI_[:,5], (grid_x_, grid_y_), method='cubic')
+
+    return grid_z_
 
 # ----------------------------------------------------------------------
 # Read the input data; ROI generation; Plot strain field
@@ -196,7 +207,6 @@ for i in range(stage_min,stage_max+1,2):
     d_grid_x = {}
     d_grid_y = {}
     d_grid_z = {}
-    d_points = {}
 
     for m in range(1,n_ROI+1,1):
 
@@ -214,14 +224,12 @@ for i in range(stage_min,stage_max+1,2):
         
         d_ROI['ROI_{}'.format(m)] = d_ROI['ROI_{}'.format(m)][~np.isnan(d_ROI['ROI_{}'.format(m)]).any(axis=1)]
 
-        d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)] = grid(d_ROI['ROI_{}'.format(m)])
-
-        d_points['points_{}'.format(m)] = np.column_stack([d_ROI['ROI_{}'.format(m)][:,1], d_ROI['ROI_{}'.format(m)][:,2]])    
+        d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)] = grid(d_ROI['ROI_{}'.format(m)])  
 
 # ---------------------------------------------------------
 # Interpolation
 # ---------------------------------------------------------
-        d_grid_z['grid_z_{}'.format(m)] = griddata(d_points['points_{}'.format(m)], d_ROI['ROI_{}'.format(m)][:,5], (d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)]), method='cubic')
+        d_grid_z['grid_z_{}'.format(m)] = field_interpolation(d_ROI['ROI_{}'.format(m)], d_grid_x['grid_x_{}'.format(m)], d_grid_y['grid_y_{}'.format(m)])
 
 # ---------------------------------------------------------
 # Plot the Data
@@ -247,7 +255,7 @@ for i in range(stage_min,stage_max+1,2):
 # ----------------------------------------------------------------------
 # Separate mBtG 
 # ----------------------------------------------------------------------
-data = seperation_mBtG(d_ROI['ROI_2'])
+data = calculation_mBtG(gom_data)
 
 # # --------------------------------------------------------------------
 # # Calculations
