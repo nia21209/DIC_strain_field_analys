@@ -42,11 +42,11 @@ except:
 # )
 
 # X = StandardScaler().fit_transform(X)
-X = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,2]])
+X = np.column_stack([gom_data.iloc[:,4], gom_data.iloc[:,5]])
 # %%
 # Compute DBSCAN
 # --------------
-db = DBSCAN(eps=.3, min_samples=10).fit(X)
+db = DBSCAN(eps=.075, min_samples=10).fit(X)
 core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
 core_samples_mask[db.core_sample_indices_] = True
 labels = db.labels_
