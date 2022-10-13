@@ -3,6 +3,7 @@
 # Load measured strain field from GOM-System and save the data for interpolation
 # -----------------------------------------------------------------------------
 from cProfile import label
+from cmath import nan
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,11 +13,12 @@ import os
 from sklearn.cluster import KMeans
 from sklearn.cluster import DBSCAN
 from sklearn.datasets import make_blobs
+import copy
 
 specimen_id = str('GM-28_RD_comp_tens')
-surface_id = str('surface_yz')
-xy_surface = False
-file_name = str('surface_yz_40_20')
+surface_id = str('surface_yx')
+xy_surface = True
+file_name = str('surface_yx_30_15')
 
 stage_min = 1
 stage_max = 100
@@ -85,9 +87,9 @@ def grid(d_ROI):
     return (grid_x,grid_y)
 
 # ----------------------------------------------------------------------
-# Function for separation of the mBtG
+# Function for separation and calculaton of the means values in mBtG
 # ----------------------------------------------------------------------
-def calculation_mBtG(DIC_data):
+def calculation_mBtG(DIC_data,d_grid_x,d_grid_y,d_grid_z):
 
     X = np.column_stack([DIC_data.iloc[:,4], DIC_data.iloc[:,5]])
     
@@ -154,7 +156,7 @@ def calculation_mBtG(DIC_data):
                                                      centroids[0,1],\
                                                      -centroids[0,0]/centroids[0,1]))
         ascii_file.close()
-    
+  
     else:
         kmeans = KMeans(n_clusters=2).fit(X)
         y_pred = KMeans(n_clusters=2).fit_predict(X)
@@ -187,12 +189,13 @@ def calculation_mBtG(DIC_data):
         eps_yy_mean_out_mBtG = np.max(centroids[:,1])
         nu_yx_mean_out_mBtG = -eps_xx_mean_out_mBtG / eps_yy_mean_out_mBtG
 
-        print('----- %s -----' % i_file_id)
+        print('\n')
+        print('------ %s -------' % i_file_id)
         print('eps_xx_mean_in_mBtG = %0.3f' % eps_xx_mean_in_mBtG)
         print('eps_yy_mean_in_mBtG = %0.3f' % eps_yy_mean_in_mBtG)
         print('nu_yx_mean_in_mBtG = %0.3f' % nu_yx_mean_in_mBtG)
 
-        print('-------------------')
+        print('------------------------------------')
         print('eps_xx_mean_out_mBtG = %0.3f' % eps_xx_mean_out_mBtG)
         print('eps_yy_mean_out_mBtG = %0.3f' % eps_yy_mean_out_mBtG)
         print('nu_yx_mean_out_mBtG = %0.3f' % nu_yx_mean_out_mBtG)
@@ -206,6 +209,98 @@ def calculation_mBtG(DIC_data):
                                                                        eps_yy_mean_out_mBtG,\
                                                                        nu_yx_mean_out_mBtG))
         ascii_file.close()
+
+        ascii_file_mBtG = open('%s_scatter_in_mBtG.dat' % i_file_id, 'w')
+        ascii_file_mBtG.write('eps_xx,eps_yy\n')
+        ascii_file_mBtG.close()
+        
+        ascii_file_out_mBtG = open('%s_scatter_out_mBtG.dat' % i_file_id, 'w')
+        ascii_file_out_mBtG.write('eps_xx,eps_yy\n')
+        ascii_file_out_mBtG.close()
+
+        for h in range(0,len(y_pred),1):
+            if y_pred[h] == 0:
+                ascii_file_out_mBtG = open('%s_scatter_out_mBtG.dat' % i_file_id, 'a')
+                ascii_file_out_mBtG.write('%0.6f,%0.6f\n' % (DIC_data.iloc[h,4],DIC_data.iloc[h,5]))
+                ascii_file_out_mBtG.close()
+            else:
+                ascii_file_mBtG = open('%s_scatter_in_mBtG.dat' % i_file_id, 'a')
+                ascii_file_mBtG.write('%0.6f,%0.6f\n' % (DIC_data.iloc[h,4],DIC_data.iloc[h,5]))
+                ascii_file_mBtG.close()
+
+# ----- Plot mBtG separation
+        threshold_one_sigma = abs(np.min(centroids[:,1])) - abs(0.674490 * np.min(centroids[:,1]))
+
+# ----- Inside of mBtG
+        d_grid_z_mBtG = copy.deepcopy(d_grid_z)
+
+        for d in range(1,n_clusters_+1,1):
+
+            len_k = np.shape(d_grid_x['grid_x_{}'.format(d)])[0]
+            len_l = np.shape(d_grid_x['grid_x_{}'.format(d)])[1]
+            
+            for k in range(0,len_k,1):
+                for l in range(0,len_l,1):
+                    
+                    delta = abs(np.min(centroids[:,1]) - d_grid_z_mBtG['grid_z_{}'.format(d)][k,l])
+
+                    if delta > threshold_one_sigma:
+                        d_grid_z_mBtG['grid_z_{}'.format(d)][k,l] = np.NaN
+                    else:
+                        pass
+
+        plt.figure(figsize=(6,8))
+
+        for d in range(1,n_clusters_+1,1):
+            plt.pcolormesh(d_grid_x['grid_x_{}'.format(d)],d_grid_y['grid_y_{}'.format(d)],d_grid_z_mBtG['grid_z_{}'.format(d)], cmap='jet', vmin=-3, vmax=1)
+
+        plt.colorbar()
+        plt.grid()
+        plt.title('%s - in mBtG' % i_file_id)
+
+        try:
+            os.remove('%s_in_mBtG.png' % i_file_id)
+        except:
+            pass
+
+        plt.savefig('%s_in_mBtG.png' % i_file_id)
+        #plt.show()
+
+# ----- Outside of mBtG
+
+        d_grid_z_out_mBtG = copy.deepcopy(d_grid_z)
+
+        for d in range(1,n_clusters_+1,1):
+
+            len_k = np.shape(d_grid_x['grid_x_{}'.format(d)])[0]
+            len_l = np.shape(d_grid_x['grid_x_{}'.format(d)])[1]
+            
+            for k in range(0,len_k,1):
+                for l in range(0,len_l,1):
+                    
+                    delta = abs(np.min(centroids[:,1]) - d_grid_z_out_mBtG['grid_z_{}'.format(d)][k,l])
+
+                    if delta <= threshold_one_sigma:
+                        d_grid_z_out_mBtG['grid_z_{}'.format(d)][k,l] = np.NaN
+                    else:
+                        pass
+
+        plt.figure(figsize=(6,8))
+
+        for d in range(1,n_clusters_+1,1):
+            plt.pcolormesh(d_grid_x['grid_x_{}'.format(d)],d_grid_y['grid_y_{}'.format(d)],d_grid_z_out_mBtG['grid_z_{}'.format(d)], cmap='jet', vmin=-3, vmax=1)
+
+        plt.colorbar()
+        plt.grid()
+        plt.title('%s - out mBtG' % i_file_id)
+
+        try:
+            os.remove('%s_out_mBtG.png' % i_file_id)
+        except:
+            pass
+
+        plt.savefig('%s_out_mBtG.png' % i_file_id)
+        #plt.show()
 
     return (centroids)
 
@@ -331,86 +426,7 @@ for i in range(stage_min,stage_max+1,2):
 # ----------------------------------------------------------------------
 # Separate mBtG 
 # ----------------------------------------------------------------------
-    data = calculation_mBtG(gom_data)
-
-# # --------------------------------------------------------------------
-# # Calculations
-# # --------------------------------------------------------------------
-#     eps_y_mean = abs(np.mean(gom_data.iloc[:,5]))
-    
-#     if eps_y_mean > Rp:
-
-#         eps_x_mean = np.mean(gom_data.iloc[:,4])
-#         nu_yx = -eps_x_mean / eps_y_mean
-
-#         print('-------------------------------------')
-#         print(i)
-#         print('eps_x_mean: ', eps_x_mean)
-#         print('eps_y_mean: ', eps_y_mean)
-#         print('nu_yx: ', nu_yx)
-#         print('-------------------------------------')
-
-# # --------------------------------------------------------------------
-# # Write results to ASCII file
-# # ---------------------------------------------------------
-#         ascii_file = open('stages_means.csv', 'a')
-#         ascii_file.write('%s,%0.3f,%0.3f,%0.3f\n' % (i_file_id,eps_x_mean,eps_y_mean,nu_yx))
-#         ascii_file.close()
-
-
-# # ---------------------------------------------------------
-# # Plot the Data
-# # ---------------------------------------------------------
-#         # plt.figure(figsize=(8,8))
-#         # plt.imshow(grid_z_0, cmap='jet', extent=(x_min,x_max,y_min,y_max), origin='lower',vmin=-3,vmax=3)
-#         # plt.colorbar()
-#         # #plt.grid()
-
-#         # try:
-#         #     os.remove('%s.png' % i_file_id)
-#         # except:
-#         #     pass
-
-#         # #plt.savefig('%s.png' % i_file_id)
-#         # plt.title('%s;e_y=%0.2f;e_x=%0.2f;nu_yx=%0.2f' % (i_file_id,eps_y_mean,eps_x_mean,nu_yx))
-#         # #plt.show()
-
-
-#         X = np.column_stack([gom_data.iloc[:,1], gom_data.iloc[:,1]])
-#         kmeans = KMeans(n_clusters=2,n_init=10).fit(X)
-#         y_pred = KMeans(n_clusters=2).fit_predict(X)
-#         centroids = kmeans.cluster_centers_
-#         print(centroids)
-#         for i in range(0,len(y_pred),1):
-#             print(y_pred[i])
-      
-#         plt.figure(figsize=(6,6))
-#         plt.scatter(X[:, 0], X[:, 1], c=y_pred)
-#         plt.scatter(centroids[:,0],centroids[:,1],marker='x',s=169,linewidths=3)
-#         #plt.plot((0,-5),(0,10))
-#         plt.title("kmeans")
-#         plt.xlabel('eps_xx')
-#         plt.ylabel('eps_yy')
-#         #plt.xlim((eps_x_mean*1.3,0))
-#         #plt.ylim((0,eps_y_mean*1.3))
-
-#         try:
-#             os.remove('%s_kmeans.png' % i_file_id)
-#         except:
-#             pass
-
-#         #plt.savefig('%s_kmeans.png' % i_file_id)
-
-#         plt.grid()
-#         plt.show()
-    
-#     else:
-#         pass
-
-#     # plt.figure()
-#     # plt.plot(gom_data.iloc[:,1],gom_data.iloc[:,2],'.')
-#     # plt.grid()
-#     # plt.show()
+    data = calculation_mBtG(gom_data,d_grid_x,d_grid_y,d_grid_z)
 
 # for later
 
